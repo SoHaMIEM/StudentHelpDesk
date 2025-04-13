@@ -1,0 +1,21 @@
+Loan Limits:
+- Undergraduate: $50,000
+- Graduate: $75,000
+- PhD: $100,000
+
+Interest Rates:
+- Base rate: 6%
+- Program adjustments:
+  * Undergraduate: +0%
+  * Graduate: -0.5%
+  * PhD: -1%
+
+Terms:
+- Repayment period: 10 years
+- Flexible repayment options available
+- Annual budget cap: $1,000,000
+
+Requirements:
+- Valid enrollment status
+- Satisfactory academic progress
+- Credit check required

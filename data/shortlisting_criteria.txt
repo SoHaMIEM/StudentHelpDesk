@@ -1,0 +1,24 @@
+Evaluation Components:
+1. Academic Performance (40%)
+   - GPA/percentage
+   - Standardized test scores
+   - Academic awards/achievements
+
+2. Letters of Recommendation (30%)
+   - Academic references
+   - Professional references
+   - Research experience
+
+3. Statement of Purpose (20%)
+   - Career goals
+   - Research interests
+   - Program fit
+
+4. Overall Profile (10%)
+   - Extracurricular activities
+   - Leadership experience
+   - Publications/projects
+
+Minimum Requirements:
+- Cumulative score: 60%
+- No component below 50%

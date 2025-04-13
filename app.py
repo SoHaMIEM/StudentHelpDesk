@@ -93,23 +93,23 @@ async def show_student_interface():
             # Document upload with clear instructions
             st.markdown("### Required Documents")
             st.markdown("""
-            Please upload the following documents:
+            Please upload PDF or image files containing:
             - Academic transcripts
             - Letters of recommendation
             - Statement of purpose
-            - CV/Resume
+            - Identification documents (with Name, DOB, Aadhar)
             """)
             
             uploaded_files = st.file_uploader(
                 "Upload Documents",
                 accept_multiple_files=True,
-                type=['pdf', 'doc', 'docx']
+                type=['pdf', 'jpg', 'jpeg', 'png']
             )
             
             submit_button = st.form_submit_button("Submit Application")
             
             if submit_button and name and email and program and uploaded_files:
-                with st.spinner("Processing your application..."):
+                with st.spinner("Processing your documents..."):
                     # Create application data dictionary
                     application_data = {
                         "name": name,
@@ -117,16 +117,35 @@ async def show_student_interface():
                         "program": program
                     }
                     
-                    result = await st.session_state.api.submit_application(
-                        application_data,
-                        uploaded_files
-                    )
-                    
-                    if result['success']:
-                        st.success(f"Application submitted successfully! Your ID: {result['application_id']}")
-                        st.info("Please save your application ID for future reference.")
-                    else:
-                        st.error(result.get('error', 'Application submission failed'))
+                    try:
+                        # Show progress indicator for document processing
+                        progress_bar = st.progress(0)
+                        st.write("Verifying documents...")
+                        
+                        result = await st.session_state.api.submit_application(
+                            application_data,
+                            uploaded_files
+                        )
+                        
+                        progress_bar.progress(100)
+                        
+                        if result['success']:
+                            st.success(f"Application submitted successfully! Your ID: {result['application_id']}")
+                            st.info("Please save your application ID for future reference.")
+                            
+                            # Show extracted information if available
+                            if 'extracted_data' in result:
+                                st.write("### Verified Information")
+                                st.json(result['extracted_data'])
+                        else:
+                            st.error(result.get('error', 'Application submission failed'))
+                            if 'extracted_data' in result:
+                                st.warning("Some information could not be verified. Please check your documents.")
+                                st.write("### Extracted Information")
+                                st.json(result['extracted_data'])
+                    except Exception as e:
+                        st.error(f"Error processing documents: {str(e)}")
+                        st.info("Please ensure your documents are clear and contain the required information.")
     
     with tabs[1]:  # Loan Request Tab
         st.subheader("Student Loan Application")

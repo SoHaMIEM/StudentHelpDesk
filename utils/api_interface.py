@@ -24,15 +24,25 @@ class AdmissionAPI:
         """Submit a new application"""
         # First verify documents
         doc_verification = await self.document_checker.verify_documents(documents)
+        
+        # If document verification failed, return the error with extracted data
         if not doc_verification['valid']:
             return {
                 "success": False,
-                "error": doc_verification['error']
+                "error": doc_verification.get('reason', 'Document verification failed'),
+                "extracted_data": doc_verification.get('extracted_data', {})
             }
             
         # Process application
         result = await self.admission_officer.process_application(application_data)
         if result['success']:
+            # Add verification results to the response
+            result.update({
+                "extracted_data": doc_verification.get('extracted_data', {}),
+                "matched_student": doc_verification.get('matched_student', {}),
+                "match_score": doc_verification.get('match_score', 0)
+            })
+            
             # Send confirmation to student
             await self.student_counselor.send_communication(
                 application_data,

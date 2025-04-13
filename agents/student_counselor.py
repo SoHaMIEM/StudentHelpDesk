@@ -7,10 +7,10 @@ class StudentCounselor(BaseAgent):
     def __init__(self):
         super().__init__()
         self.communication_templates = {
-            "application_received": "Dear {name}, we have received your application for {program_name}. Our team will review it shortly.",
-            "shortlisted": "Congratulations {name}! You have been shortlisted for {program_name}. Next steps: {next_steps}",
+            "application_received": "Dear {name}, we have received your application for {program}. Our team will review it shortly.",
+            "shortlisted": "Congratulations {name}! You have been shortlisted for {program}. Next steps: {next_steps}",
             "document_missing": "Dear {name}, please submit the following documents: {documents}",
-            "fee_payment": "Dear {name}, please complete the fee payment of {amount} for {program_name}."
+            "fee_payment": "Dear {name}, please complete the fee payment of {amount} for {program}."
         }
         self.common_queries = {
             "admission_process": "Information about the admission process and requirements",

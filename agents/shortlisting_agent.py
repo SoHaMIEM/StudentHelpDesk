@@ -9,7 +9,8 @@ class ShortlistingAgent(BaseAgent):
     def __init__(self):
         super().__init__()
         self.db = chromadb.Client()
-        self.collection = self.db.create_collection("eligibility_criteria")
+        # Use get_or_create_collection instead of create_collection
+        self.collection = self.db.get_or_create_collection("eligibility_criteria")
         self.program_capacity = {
             "Undergraduate": 100,
             "Graduate": 50,

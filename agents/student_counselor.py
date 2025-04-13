@@ -22,19 +22,39 @@ class StudentCounselor(BaseAgent):
         }
     
     async def send_communication(self, student: Dict[str, Any], template_key: str, **kwargs) -> Dict[str, Any]:
+        """Send communication to student using templates"""
         if template_key not in self.communication_templates:
             return {"success": False, "message": "Invalid template"}
             
-        template = self.communication_templates[template_key]
-        message = template.format(**student, **kwargs)
-        
-        # In a real implementation, this would send an actual email
-        # For demo purposes, we'll just return the message
-        return {
-            "success": True,
-            "recipient": student['email'],
-            "message": message
-        }
+        try:
+            # First format with required student info
+            template = self.communication_templates[template_key]
+            
+            # Create format dict with student info and optional kwargs
+            format_dict = {**student}  # Start with student info
+            if kwargs:  # Add any optional parameters
+                format_dict.update({k: v for k, v in kwargs.items() if v is not None})
+                
+            # Format template with all available parameters
+            message = template.format(**format_dict)
+            
+            # In a real implementation, this would send an actual email
+            # For demo purposes, we'll just return the message
+            return {
+                "success": True,
+                "recipient": student.get('email', 'No email provided'),
+                "message": message
+            }
+        except KeyError as e:
+            return {
+                "success": False,
+                "message": f"Missing required template parameter: {str(e)}"
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Error formatting message: {str(e)}"
+            }
     
     async def get_program_info(self, program: str) -> str:
         prompt = f"Provide detailed information about the {program} program including admission requirements and course structure"

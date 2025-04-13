@@ -3,14 +3,50 @@ from typing import Dict, Any, List
 from .error_handler import DocumentValidationError, LoanProcessingError, logger
 import pytesseract
 from PIL import Image
-from typing import List, Dict, Any
-import re
 import pandas as pd
 import pdf2image
 from pathlib import Path
 import io
 import os
+import json
+import google.generativeai as genai
+from .config import Config
 
+# Configure Gemini
+genai.configure(api_key=Config.GEMINI_API_KEY)
+
+def get_gemini_model():
+    """Get configured Gemini model instance"""
+    generation_config = {
+        'temperature': 0.1,  # Low temperature for factual extraction
+        'top_p': 0.8,
+        'top_k': 40,
+    }
+    
+    safety_settings = [
+        {
+            "category": "HARM_CATEGORY_HARASSMENT",
+            "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+        },
+        {
+            "category": "HARM_CATEGORY_HATE_SPEECH",
+            "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+        },
+        {
+            "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+            "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+        },
+        {
+            "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+            "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+        }
+    ]
+    
+    return genai.GenerativeModel(
+        model_name='gemini-2.0-flash',
+        generation_config=generation_config,
+        safety_settings=safety_settings
+    )
 
 def validate_email(email: str) -> bool:
     """Validate email format"""
@@ -53,8 +89,8 @@ def validate_loan_request(amount: float, student_info: Dict[str, Any]) -> None:
 
 def validate_documents(documents: List[Any]) -> Dict[str, Any]:
     """
-    Validate documents using OCR and match against student database
-    Returns success/failure with extracted and matched information
+    Validate documents using OCR and Gemini AI for information extraction.
+    Documents are valid only if all required fields are present in the extracted data.
     """
     try:
         # Configure Tesseract with absolute path
@@ -67,21 +103,15 @@ def validate_documents(documents: List[Any]) -> Dict[str, Any]:
         # Configure Poppler path
         poppler_path = str(Path(__file__).parent.parent / 'poppler' / 'poppler-21.03.0' / 'Library' / 'bin')
         
-        # Patterns for data extraction with improved regex
-        patterns = {
-            'name': r'(?:Name|Student Name)[:\s]+([A-Za-z\s]{2,50})',
-            'dob': r'(?:DOB|Date of Birth)[:\s]+(\d{1,2}[-/]\d{1,2}[-/]\d{4}|\d{4}[-/]\d{1,2}[-/]\d{1,2})',
-            'passing_year': r'(?:Passing Year|Year of Passing)[:\s]+(\d{4})',
-            'board': r'(?:Board|Examination Board)[:\s]*(CBSE|ICSE|WBCHSE)',
-            'aadhar': r'\b[2-9]{1}[0-9]{11}\b'
-        }
+        model = get_gemini_model()
         
+        # Initialize extracted data structure
         extracted_data = {
             'name': [],
             'dob': [],
             'passing_year': [],
             'board': [],
-            'aadhar': []
+            'gender': []
         }
         
         logger.info("Starting document processing...")
@@ -94,33 +124,29 @@ def validate_documents(documents: List[Any]) -> Dict[str, Any]:
             # Handle PDF files
             if doc.name.lower().endswith('.pdf'):
                 try:
-                    # Convert PDF to images with improved settings
                     images = pdf2image.convert_from_bytes(
                         doc.read(),
-                        dpi=300,  # Higher DPI for better quality
-                        fmt='jpeg',  # Use JPEG format for OCR
-                        thread_count=2,  # Use multiple threads
+                        dpi=300,
+                        fmt='jpeg',
+                        thread_count=2,
                         poppler_path=poppler_path,
-                        grayscale=True  # Convert to grayscale immediately
+                        grayscale=True
                     )
                     
-                    # Process each page
                     for page_num, img in enumerate(images, 1):
                         logger.info(f"Processing PDF page {page_num}")
-                        # Apply image preprocessing for better OCR
                         text += pytesseract.image_to_string(
                             img,
-                            config='--oem 3 --psm 3 -l eng',  # Use best OCR engine mode
-                            timeout=30  # Add timeout to prevent hanging
+                            config='--oem 3 --psm 3 -l eng',
+                            timeout=30
                         )
                         
                 except Exception as e:
                     logger.error(f"PDF processing error: {str(e)}")
                     raise Exception(f"PDF processing failed: {str(e)}")
                     
-            # Handle image files
             elif doc.name.lower().endswith(('.png', '.jpg', '.jpeg')):
-                image = Image.open(io.BytesIO(doc.read())).convert('L')  # Convert to grayscale
+                image = Image.open(io.BytesIO(doc.read())).convert('L')
                 text += pytesseract.image_to_string(
                     image,
                     config='--oem 3 --psm 3 -l eng'
@@ -130,74 +156,93 @@ def validate_documents(documents: List[Any]) -> Dict[str, Any]:
                 
             logger.info(f"Extracted text length: {len(text)}")
             
-            # Extract information using regex patterns
-            for field, pattern in patterns.items():
-                matches = re.findall(pattern, text, re.IGNORECASE)
-                if matches:
-                    if isinstance(matches[0], tuple):
-                        extracted_data[field].append(matches[0][1])
-                    else:
-                        extracted_data[field].append(matches[0])
-                logger.info(f"Found {len(matches)} matches for {field}")
+            # Clean up OCR text
+            text = ' '.join(text.split())  # Remove extra whitespace
+            text = re.sub(r'[^\x00-\x7F]+', ' ', text)  # Remove non-ASCII characters
+            
+            # Use Gemini to extract information
+            prompt = f"""You are an expert document analyzer. Extract specific information from the following document text.
+
+Rules:
+1. Return ONLY a valid JSON object, no other text or explanation
+2. For missing or unclear information, use null (not the string "null")
+3. Format dates as YYYY-MM-DD if possible
+4. Names should be in proper case
+5. Board must be one of: CBSE, ICSE, WBCHSE
+6. Gender must be one of: Male, Female
+7. Passing year must be a 4-digit year between 1990 and 2025
+
+The response must be in this exact format:
+{{
+    "name": null,
+    "dob": null,
+    "passing_year": null,
+    "board": null,
+    "gender": null
+}}
+
+Document text to analyze:
+{text}"""
+            
+            try:
+                response = model.generate_content(prompt)
+                # Log raw response for debugging
+                logger.debug(f"Raw Gemini response before cleanup: {response.text}")
+                
+                # Clean the response text to ensure it's valid JSON
+                response_text = response.text.strip()
+                # Remove any markdown code block markers if present
+                response_text = re.sub(r'^```json\s*|\s*```$', '', response_text)
+                logger.debug(f"Cleaned response text: {response_text}")
+                
+                # Parse JSON response
+                extracted = json.loads(response_text)
+                
+                # Add extracted values to our collection
+                for field in extracted_data:
+                    if extracted.get(field) is not None and extracted[field] != "null":
+                        extracted_data[field].append(extracted[field])
                         
+                logger.info(f"Gemini extracted: {extracted}")
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON parsing error from Gemini response: {str(e)}")
+                logger.error(f"Response that failed parsing: {response_text}")
+                continue
+            except Exception as e:
+                logger.error(f"Gemini extraction error: {str(e)}")
+                continue
+
         # Clean and standardize extracted data
-        cleaned_data = {
-            field: list(set(values)) 
-            for field, values in extracted_data.items()
-            if values
-        }
+        cleaned_data = {}
+        for field, values in extracted_data.items():
+            # Only include fields that have non-empty values
+            unique_values = list(set(v for v in values if v))
+            if unique_values:
+                cleaned_data[field] = unique_values
         
         logger.info(f"Cleaned data: {cleaned_data}")
         
-        # Match against student database
-        matches = []
-        for idx, row in student_df.iterrows():
-            match_score = 0
-            match_details = {}
-            
-            for field in cleaned_data:
-                db_value = str(row[field]).strip()
-                for extracted_value in cleaned_data[field]:
-                    extracted_clean = str(extracted_value).strip().lower()
-                    db_clean = db_value.lower()
-                    
-                    # Use more flexible matching for dates
-                    if field == 'dob':
-                        # Normalize date formats
-                        extracted_clean = re.sub(r'[-/]', '', extracted_clean)
-                        db_clean = re.sub(r'[-/]', '', db_clean)
-                    
-                    if extracted_clean == db_clean:
-                        match_score += 1
-                        match_details[field] = extracted_value
-                        
-            if match_score >= 1:  # At least one field should match
-                matches.append({
-                    'student_data': row.to_dict(),
-                    'matched_fields': match_details,
-                    'match_score': match_score
-                })
-                
-        # Determine verification result
-        if matches:
-            best_match = max(matches, key=lambda x: x['match_score'])
-            logger.info(f"Found match with score {best_match['match_score']}")
-            return {
-                "valid": True,
-                "verification_status": "success",
-                "matched_student": best_match['student_data'],
-                "matched_fields": best_match['matched_fields'],
-                "match_score": best_match['match_score'],
-                "extracted_data": cleaned_data
-            }
-        else:
-            logger.warning("No matches found in student database")
+        # Check if all required fields are present and have values
+        required_fields = {'name', 'dob', 'passing_year', 'board', 'gender'}
+        missing_fields = required_fields - set(cleaned_data.keys())
+        
+        if missing_fields:
+            logger.warning(f"Missing required fields: {missing_fields}")
             return {
                 "valid": False,
                 "verification_status": "failed",
-                "reason": "No matching student records found",
+                "reason": f"Missing required fields: {', '.join(missing_fields)}",
                 "extracted_data": cleaned_data
             }
+        
+        # All required fields are present with values
+        logger.info("All required fields found in documents")
+        return {
+            "valid": True,
+            "verification_status": "success",
+            "extracted_data": cleaned_data
+        }
             
     except Exception as e:
         logger.error(f"Document validation error: {str(e)}")

@@ -45,9 +45,11 @@ class AdmissionAPI:
             
             # Send confirmation to student
             await self.student_counselor.send_communication(
-                application_data,
-                "application_received",
-                program=application_data['program']
+                {
+                    "name": application_data.get('name', 'Student'),
+                    "email": application_data.get('email', '')
+                },
+                "application_received"
             )
             
         return result

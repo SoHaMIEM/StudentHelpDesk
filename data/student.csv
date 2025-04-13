@@ -1,4 +1,4 @@
-Name,Board,DOB,Passing_Year,Aadhar_Number,Physics,Chemistry,Mathematics
+name,board,dob,passing_year,aadhar,Physics,Chemistry,Mathematics
 Rahul Kumar,CBSE,2005-03-15,2023,123456787012,92,88,95
 Priya Singh,ICSE,2004-11-22,2023,234567870123,89,94,91
 Amit Patel,WBCHSE,2005-07-08,2023,345678701234,85,88,70
